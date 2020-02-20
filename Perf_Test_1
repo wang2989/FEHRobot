@@ -1,0 +1,173 @@
+#include <FEHLCD.h>
+#include <FEHIO.h>
+#include <FEHUtility.h>
+#include <FEHMotor.h>
+#include <FEHRPS.h>
+#define pi 3.14159265359
+
+//declaration of ports
+FEHMotor right_motor(FEHMotor::Motor0,9.0);
+FEHMotor left_motor(FEHMotor::Motor1,9.0);
+DigitalEncoder right_encoder(FEHIO::P0_0);
+DigitalEncoder left_encoder(FEHIO::P0_1);
+//AnalogInputPin rightSensor(FEHIO::P1_0);
+//AnalogInputPin middleSensor(FEHIO::P1_1);
+//AnalogInputPin leftSensor(FEHIO::P1_2);
+
+//declare variables
+float speed = 30;
+double wheelRadius = 1.25, halfCircleCounts = 477, distanceToCenter = 3.1;
+int igwanCountsRotation = 318, sensorLineThreshold, sensorNoLineThreshold;
+
+void move_forward(double distance) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from distance
+    int counts = distance * igwanCountsRotation / (2 * pi * wheelRadius);
+    LCD.WriteLine(counts);
+    //Set both motors to desired percent
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+    LCD.WriteLine("Counts Reached. Stopping");
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+
+}
+
+void turn_left(int degrees) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(-1.0 * speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void turn_right(int degrees) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(-1.0 * speed);
+    left_motor.SetPercent(speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+/*void follow_line() {
+    while(true) {
+        if (leftSensor.Value() > sensorLineThreshold) {
+            position = 2;
+        }
+        else if (rightSensor.Value() > sensorLineThreshold) {
+            position = 0;
+        }
+        else if (middleSensor.Value() > sensorLineThreshold) {
+            position = 1;
+        }
+        else if (rightSensor.Value() < sensorNoLineThreshold && middleSensor.Value() < sensorNoLineThreshold && leftSensor.Value() < sensorNoLineThreshold) {
+            position = -1;
+        }
+
+
+        switch(position) {
+            case 2:
+                right_motor.SetPercent(16);
+                left_motor.SetPercent(-16);
+                //LCD.WriteLine("We are turning left");
+                break;
+            case 1:
+                right_motor.SetPercent(12);
+                left_motor.SetPercent(12);
+                //LCD.WriteLine("We are going straight");
+                break;
+            case 0:
+                right_motor.SetPercent(-16);
+                left_motor.SetPercent(16);
+                //LCD.WriteLine("We are turning right");
+                break;
+            default:
+                //LCD.WriteLine("We are here");
+                right_motor.SetPercent(0);
+                left_motor.SetPercent(0);
+        }
+    }
+}*/
+
+int main(void)
+{
+    //declare variables
+    float x, y;
+
+    LCD.Clear();
+    LCD.SetFontColor(WHITE);
+    LCD.WriteLine("Please touch to start.");
+    //waits for touch
+    while(!LCD.Touch(&x, &y));
+    while(LCD.Touch(&x, &y));
+
+    move_forward(7.0);
+
+    turn_left(90);
+/*
+    //go till it hits line
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(speed);
+
+    while(!(middleSensor.Value() > sensorLineThreshold));
+
+    right_motor.Stop();
+    left_motor.Stop();
+
+    //aligns center with line
+    move_forward(distanceToCenter);
+
+//turn left till middle touches line
+    //Set both motors to desired percent
+    right_motor.SetPercent(.75 * speed);
+    left_motor.SetPercent(-0.75 * speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while(!(middleSensor.Value() > sensorLineThreshold));
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+//end of turning towards line
+
+    //follows line to end
+    follow_line();
+*/
+
+
+}
