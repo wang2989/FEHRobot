@@ -1,0 +1,38 @@
+float startTime = TimeNow();
+    right_motor.SetPercent(12);
+    left_motor.SetPercent(12);
+    float lowestCdSForward = 3.3, highestCdSForward = 0, tempValue;
+
+    while (TimeNow() - startTime < 1.5) {
+        tempValue = sensor.Value();
+        if (tempValue < lowestCdSForward) {
+            lowestCdSForward = tempValue;
+        }
+        if (tempValue > highestCdSForward) {
+            highestCdSForward = tempValue;
+        }
+    }
+    right_motor.Stop();
+    left_motor.Stop();
+    right_motor.SetPercent(-12);
+    left_motor.SetPercent(-12);
+    startTime = TimeNow();
+    float lowestCdSBackward = 3.3, highestCdSBackward = 0;
+
+    while (TimeNow() - startTime < 1.5) {
+        tempValue = sensor.Value();
+        if (tempValue < lowestCdSBackward) {
+            lowestCdSBackward = tempValue;
+        }
+        if (tempValue > highestCdSBackward) {
+            highestCdSBackward = tempValue;
+        }
+    }
+
+    if ((lowestCdSBackward + LowestCdSForward)/2 < CdS_Red) {
+        lightColor = 1;
+    } else if ((highestCdSForward+highestCdSBackward)/2 > CdS_Blue) {
+        lightColor = 2;
+    } else {
+        lightColor = 0;
+    }
