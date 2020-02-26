@@ -1,0 +1,73 @@
+#include <FEHLCD.h>
+#include <FEHIO.h>
+#include <FEHUtility.h>
+#include <FEHMotor.h>
+#include <FEHRPS.h>
+
+FEHMotor right_motor(FEHMotor::Motor0,9.0);
+FEHMotor left_motor(FEHMotor::Motor1,9.0);
+DigitalEncoder right_encoder(FEHIO::P0_0);
+DigitalEncoder left_encoder(FEHIO::P0_1);
+AnalogInputPin leftSensor(FEHIO::P1_0);
+AnalogInputPin middleSensor(FEHIO::P1_3);
+AnalogInputPin rightSensor(FEHIO::P1_7);
+
+float leftBound = 2.8, middleBound = 2, rightBound = 2.7;
+bool lineLeft, lineMid, lineRight, noLine = false;
+
+void follow_line() {
+    //checks if line is underneath each sensor
+    while(!noLine) {
+		noLine = false;
+        lineLeft = false;
+        lineMid = false;
+		lineRight = false;
+        if (middleSensor.Value() > middleBound) {
+            lineMid = true;
+        }
+        if (leftSensor.Value() > leftBound) {
+            lineLeft = true;
+        }
+        if (rightSensor.Value() > rightBound) {
+            lineRight = true;
+        }
+
+        //sets motor percent based on state
+        if (lineLeft && !lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(10);
+        } else if (lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(12);
+        } else if (!lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && lineMid && lineRight) {
+            right_motor.SetPercent(12);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && !lineMid && lineRight) {
+            right_motor.SetPercent(10);
+            left_motor.SetPercent(16);
+        } else {
+            right_motor.SetPercent(0);
+            left_motor.SetPercent(0);
+            noLine = true;
+        }
+    }
+}
+
+int main(void)
+{
+    float x, y;
+    LCD.Clear(FEHLCD::Black);
+    LCD.SetFontColor(FEHLCD::White);
+
+    LCD.WriteLine("Waiting for touch.");
+    while(!LCD.Touch(&x,&y));
+    while(LCD.Touch(&x,&y));
+    LCD.WriteLine("Following line");
+    follow_line();
+    LCD.WriteLine("I'm done :(");
+
+    return 0;
+}
