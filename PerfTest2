@@ -1,0 +1,237 @@
+#include <FEHLCD.h>
+#include <FEHIO.h>
+#include <FEHUtility.h>
+#include <FEHMotor.h>
+#include <FEHRPS.h>
+#include <FEHServo.h>
+
+#define pi 3.14159265359
+
+//motor ports
+FEHMotor right_motor(FEHMotor::Motor0, 9.0);
+FEHMotor left_motor(FEHMotor::Motor1, 9.0);
+DigitalEncoder right_encoder(FEHIO::P0_0);
+DigitalEncoder left_encoder(FEHIO::P0_1);
+//sensor ports
+AnalogInputPin leftSensor(FEHIO::P1_0);
+AnalogInputPin middleSensor(FEHIO::P1_3);
+AnalogInputPin rightSensor(FEHIO::P1_7);
+AnalogInputPin sensor(FEHIO::P2_0);
+//arm stuff
+FEHMotor arm(FEHMotor::Motor2, 5.0);
+FEHServo hand(FEHServo::Servo0);
+
+//robot variables (physical components)
+float baseSpeed = 30;
+double wheelRadius = 1.25, halfCircleCounts = 477, distanceToCenter = 3.1;
+int igwanCountsRotation = 318;
+
+//line following variables
+float leftBound = 2.8, middleBound = 2, rightBound = 2.7;
+bool lineLeft, lineMid, lineRight, noLine = false;
+
+void follow_line() {
+    //checks if line is underneath each sensor
+    while(!noLine) {
+        noLine = false;
+        lineLeft = false;
+        lineMid = false;
+        lineRight = false;
+        if (middleSensor.Value() > middleBound) {
+            lineMid = true;
+        }
+        if (leftSensor.Value() > leftBound) {
+            lineLeft = true;
+        }
+        if (rightSensor.Value() > rightBound) {
+            lineRight = true;
+        }
+
+        //sets motor percent based on state
+        if (lineLeft && !lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(0);
+        } else if (lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(12);
+        } else if (!lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && lineMid && lineRight) {
+            right_motor.SetPercent(12);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && !lineMid && lineRight) {
+            right_motor.SetPercent(0);
+            left_motor.SetPercent(16);
+        } else {
+            right_motor.SetPercent(0);
+            left_motor.SetPercent(0);
+            noLine = true;
+        }
+    }
+}
+
+void follow_line(float time) {
+    //checks if line is underneath each sensor
+    float initialTime = TimeNow();
+    while(!noLine && (TimeNow() - initialTime < time)) {
+        noLine = false;
+        lineLeft = false;
+        lineMid = false;
+        lineRight = false;
+        if (middleSensor.Value() > middleBound) {
+            lineMid = true;
+        }
+        if (leftSensor.Value() > leftBound) {
+            lineLeft = true;
+        }
+        if (rightSensor.Value() > rightBound) {
+            lineRight = true;
+        }
+
+        //sets motor percent based on state
+        if (lineLeft && !lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(0);
+        } else if (lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(12);
+        } else if (!lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && lineMid && lineRight) {
+            right_motor.SetPercent(12);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && !lineMid && lineRight) {
+            right_motor.SetPercent(0);
+            left_motor.SetPercent(16);
+        } else {
+            noLine = true;
+        }
+    }
+    right_motor.SetPercent(0);
+    left_motor.SetPercent(0);
+}
+
+void move_forward(float speed, double distance) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from distance
+    int counts = distance * igwanCountsRotation / (2 * pi * wheelRadius);
+    LCD.WriteLine(counts);
+    //Set both motors to desired percent
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+    LCD.WriteLine("Counts Reached. Stopping");
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+
+}
+
+void turn_left(int degrees) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(baseSpeed);
+    left_motor.SetPercent(-1.0 * baseSpeed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void turn_right(int degrees) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(-1.0 * baseSpeed);
+    left_motor.SetPercent(baseSpeed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void drive_to_line(float speed) {
+    //go till it hits line
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(speed);
+
+    while(middleSensor.Value() < middleBound);
+
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+int main(void)
+{
+    float x, y;
+    LCD.Clear(FEHLCD::Black);
+    LCD.SetFontColor(FEHLCD::White);
+    /*
+    hand.SetMin(500);
+    hand.SetMax(2318);
+    */
+
+    //waits for light to start
+    LCD.WriteLine("Waiting for light.");
+    while(!(sensor.Value() > 0.3 && sensor.Value() < 0.4));
+
+    //runs course test
+    LCD.WriteLine("Moving forward.");
+    move_forward(baseSpeed, 7.5);
+
+    LCD.WriteLine("Turning left.");
+    turn_left(20);
+
+    LCD.WriteLine("Driving to line");
+    drive_to_line(15);
+
+    LCD.WriteLine("Adjusting");
+    move_forward(15,distanceToCenter);
+    right_motor.SetPercent(-20);
+    left_motor.SetPercent(20);
+    while(middleSensor.Value() < middleBound);
+    right_motor.Stop();
+    left_motor.Stop();
+    Sleep(.25);
+
+    LCD.WriteLine("Following line");
+    follow_line(2.5);
+    LCD.WriteLine("Turning right 10");
+    turn_right(10);
+    LCD.WriteLine("Dropping this tray");
+    hand.SetDegree(0);
+    move_forward(-20, 4);
+    Sleep(2.0);
+    hand.SetDegree(40);
+
+    LCD.WriteLine("done :(");
+
+    return 0;
+}
