@@ -1,0 +1,74 @@
+void calibrateValues(int *intValues[], float *floatValues[]) {
+    //input the array size of each
+    float x, y;
+    bool hasClickedSkip;
+    int intArraySize = 6, floatArraySize = 3;
+    FEHIcon::Icon numberPad[15];
+    char pad_nums[15][20] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "X", "Enter", " ", "Skip"};
+    char newValue[20];
+
+    //FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+    //INT CALIBRATION
+    for (int i = 0; i < intArraySize; i++) {
+        sprintf(newValue, "%i", *intValues[i]);
+        LCD.Clear(BLACK);
+        FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+        LCD.WriteAt(getName(*intValues[i]), 50, 10);
+        LCD.WriteAt(newValue, 50, 40);
+        hasClickedSkip = false;
+        float lastTouch = TimeNow();
+        while (!hasClickedSkip) {
+            LCD.Touch(&x,&y);
+            //if user selected a number
+        if (TimeNow() - lastTouch > .3) {
+            for (int i = 0; i < 9; i++) {
+                if (numberPad[i].Pressed(x,y,0)) {
+                    strcat(newValue, pad_nums[i]);
+                    //LCD.SetFontColor(BLACK);
+                    //LCD.DrawRectangle(50, 40, 150, 60);
+                    LCD.SetFontColor(WHITE);
+                    LCD.WriteAt(newValue, 50, 40);
+                    lastTouch = TimeNow();
+                }
+            }
+            if (numberPad[10].Pressed(x,y,0)) {
+                strcat(newValue, pad_nums[10]);
+                //LCD.SetFontColor(BLACK);
+                //LCD.DrawRectangle(50, 40, 150, 60);
+                LCD.SetFontColor(WHITE);
+                LCD.WriteAt(newValue, 50, 40);
+                lastTouch = TimeNow();
+            } else if (numberPad[11].Pressed(x,y,0)) {
+                newValue[strlen(newValue)-1] = 0;
+                LCD.Clear(BLACK);
+                FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+                LCD.WriteAt(getName(*intValues[i]), 50, 10);
+                LCD.WriteAt(newValue, 50, 40);
+                lastTouch = TimeNow();
+            } else if (numberPad[12].Pressed(x,y,0)) {
+                hasClickedSkip = true;
+                stringstream enter(newValue);
+                enter >> *intValues[i];
+                lastTouch = TimeNow();
+            } else if (numberPad[14].Pressed(x,y,0)) {
+                hasClickedSkip = true;
+                lastTouch = TimeNow();
+            }
+        }
+        }
+        LCD.Clear(BLACK);
+        LCD.WriteLine("Successfully Calibrated");
+    }
+
+
+    /*
+    *intValues[1] = 4;
+    for (int i = 0; i < intArraySize; i++) {
+        LCD.WriteLine(getName(*intValues[i]));
+        LCD.WriteLine(*intValues[i]);
+    }
+    for (int i = 0; i < floatArraySize; i++) {
+        LCD.WriteLine(getName(*floatValues[i]));
+        LCD.WriteLine(*floatValues[i]);
+    }*/
+}
