@@ -1,0 +1,628 @@
+#include <FEHLCD.h>
+#include <FEHIO.h>
+#include <FEHUtility.h>
+#include <FEHMotor.h>
+#include <FEHRPS.h>
+#include <FEHServo.h>
+#include <stdio.h>
+#include <string.h>
+#include <iostream>
+#include <sstream>
+
+using namespace std;
+
+#define pi 3.14159265359
+#define getName(var)  #var
+
+//motor ports
+FEHMotor right_motor(FEHMotor::Motor0, 9.0);
+FEHMotor left_motor(FEHMotor::Motor1, 9.0);
+DigitalEncoder right_encoder(FEHIO::P0_0);
+DigitalEncoder left_encoder(FEHIO::P0_2);
+//sensor ports
+AnalogInputPin leftSensor(FEHIO::P1_0);
+AnalogInputPin middleSensor(FEHIO::P1_3);
+AnalogInputPin rightSensor(FEHIO::P1_7);
+AnalogInputPin sensor(FEHIO::P2_0);
+//arm stuff
+FEHMotor arm(FEHMotor::Motor2, 5.0);
+FEHServo hand(FEHServo::Servo0);
+//bump switches
+DigitalInputPin right_front(FEHIO::P3_2);
+DigitalInputPin left_front(FEHIO::P3_0);
+DigitalInputPin right_back(FEHIO::P3_6);
+DigitalInputPin left_back(FEHIO::P3_4);
+
+//robot variables (physical components)
+float baseSpeed = 30;
+double wheelRadius = 1.25, halfCircleCounts = 477, distanceToCenter = 3.1;
+int igwanCountsRotation = 318;
+
+//line following variables
+float leftBound = 2.8, middleBound = 2, rightBound = 2.7, midAvg, rightAvg, leftAvg;
+bool lineLeft, lineMid, lineRight, noLine = false, detection;
+
+void follow_line() {
+    //checks if line is underneath each sensor
+    while(!noLine) {
+        noLine = false;
+        lineLeft = false;
+        lineMid = false;
+        lineRight = false;
+        if (middleSensor.Value() > middleBound) {
+            lineMid = true;
+        }
+        if (leftSensor.Value() > leftBound) {
+            lineLeft = true;
+        }
+        if (rightSensor.Value() > rightBound) {
+            lineRight = true;
+        }
+
+        //sets motor percent based on state
+        if (lineLeft && !lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(0);
+        } else if (lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(12);
+        } else if (!lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && lineMid && lineRight) {
+            right_motor.SetPercent(12);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && !lineMid && lineRight) {
+            right_motor.SetPercent(0);
+            left_motor.SetPercent(16);
+        } else {
+            right_motor.SetPercent(0);
+            left_motor.SetPercent(0);
+            noLine = true;
+        }
+    }
+}
+
+void follow_line(float time) {
+    //checks if line is underneath each sensor
+    float initialTime = TimeNow();
+    while(!noLine && (TimeNow() - initialTime < time)) {
+        noLine = false;
+        lineLeft = false;
+        lineMid = false;
+        lineRight = false;
+        if (middleSensor.Value() > middleBound) {
+            lineMid = true;
+        }
+        if (leftSensor.Value() > leftBound) {
+            lineLeft = true;
+        }
+        if (rightSensor.Value() > rightBound) {
+            lineRight = true;
+        }
+
+        //sets motor percent based on state
+        if (lineLeft && !lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(-16);
+        } else if (lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(12);
+        } else if (!lineLeft && lineMid && !lineRight) {
+            right_motor.SetPercent(16);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && lineMid && lineRight) {
+            right_motor.SetPercent(12);
+            left_motor.SetPercent(16);
+        } else if (!lineLeft && !lineMid && lineRight) {
+            right_motor.SetPercent(-16);
+            left_motor.SetPercent(16);
+        } else {
+            noLine = true;
+        }
+    }
+    right_motor.SetPercent(0);
+    left_motor.SetPercent(0);
+}
+
+void move_forward(float speed, float distance) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from distance
+    int counts = distance * igwanCountsRotation / (2 * pi * wheelRadius);
+    LCD.WriteLine(counts);
+    //Set both motors to desired percent
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts) {
+        //LCD.WriteLine(left_encoder.Counts());
+        //LCD.WriteLine(right_encoder.Counts());
+        //Sleep(.5);
+    }
+    LCD.WriteLine("Counts Reached. Stopping");
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+
+}
+
+void turn_left(int degrees) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(baseSpeed);
+    left_motor.SetPercent(-1.0 * baseSpeed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void turn_right(int degrees) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(-1.0 * baseSpeed);
+    left_motor.SetPercent(baseSpeed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void turn_left(float degrees, float speed) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(-1.0 * speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void turn_right(float degrees, float speed) {
+    //Reset encoder counts
+    right_encoder.ResetCounts();
+    left_encoder.ResetCounts();
+
+    //calculates counts from degrees
+    int counts = halfCircleCounts * (degrees/180.0);
+
+    //Set both motors to desired percent
+    right_motor.SetPercent(-1.0 * speed);
+    left_motor.SetPercent(speed);
+
+    //While the average of the left and right encoder is less than counts,
+    //keep running motors
+    while((left_encoder.Counts() + right_encoder.Counts()) / 2. < counts);
+
+    //Turn off motors
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void drive_to_line(float speed) {
+    //go till it hits line
+    detection = false;
+    right_motor.SetPercent(speed);
+    left_motor.SetPercent(speed);
+    while (!detection) {
+        while(middleSensor.Value() < middleBound && leftSensor.Value() < leftBound && rightSensor.Value() < rightBound);
+        right_motor.Stop();
+        left_motor.Stop();
+        midAvg = 0;
+        rightAvg = 0;
+        leftAvg = 0;
+        for (int i = 0; i < 50; i++) {
+            midAvg = midAvg + middleSensor.Value()/50. ;
+            rightAvg = rightAvg + rightSensor.Value()/50. ;
+            leftAvg = leftAvg + leftSensor.Value()/50. ;
+        }
+
+        if (midAvg > middleBound || rightAvg > rightBound || leftAvg > leftBound) {
+            detection = true;
+        } else {
+            right_motor.SetPercent(speed);
+            left_motor.SetPercent(speed);
+        }
+    }
+
+    right_motor.Stop();
+    left_motor.Stop();
+}
+
+void starting_position()
+{
+    float start_time;
+
+    hand.SetDegree(112);
+
+    Sleep(500);
+
+    start_time=TimeNow();
+
+    while (TimeNow()-start_time<2.0)
+    {
+        arm.SetPercent(100);
+    }
+
+    arm.Stop();
+
+    LCD.WriteLine("Ready to Go!!!!");
+
+}
+
+void arm_horizontal()
+{
+    float start_time;
+
+    hand.SetDegree(40);
+
+    start_time=TimeNow();
+
+    while(TimeNow()-start_time < 1.75)
+    {
+        arm.SetPercent(-100);
+    }
+
+    arm.Stop();
+
+    LCD.WriteLine("Arm is Horizontal");
+}
+
+void calibrateValues(int *intValues[], float *floatValues[], char intNames[][50], char floatNames[][50]) {
+    //input the array size of each
+    float x, y;
+    bool hasClickedSkip;
+
+
+
+    //MAKE SURE TO EDIT THIS
+
+
+
+    int intArraySize = 0, floatArraySize = 25;
+    FEHIcon::Icon numberPad[15];
+    char pad_nums[15][20] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "X", "Enter", " ", "Skip"};
+    char newValue[20];
+
+    //FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+    //INT CALIBRATION
+    for (int i = 0; i < intArraySize; i++) {
+        sprintf(newValue, "%i", *intValues[i]);
+        LCD.Clear(BLACK);
+        FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+        LCD.WriteAt(intNames[i], 50, 10);
+        LCD.WriteAt(newValue, 50, 40);
+        hasClickedSkip = false;
+        float lastTouch = TimeNow();
+        while (!hasClickedSkip) {
+            LCD.Touch(&x,&y);
+            //if user selected a number
+        if (TimeNow() - lastTouch > .3) {
+            for (int i = 0; i < 9; i++) {
+                if (numberPad[i].Pressed(x,y,0)) {
+                    strcat(newValue, pad_nums[i]);
+                    //LCD.SetFontColor(BLACK);
+                    //LCD.DrawRectangle(50, 40, 150, 60);
+                    LCD.SetFontColor(WHITE);
+                    LCD.WriteAt(newValue, 50, 40);
+                    lastTouch = TimeNow();
+                }
+            }
+            if (numberPad[10].Pressed(x,y,0)) {
+                strcat(newValue, pad_nums[10]);
+                //LCD.SetFontColor(BLACK);
+                //LCD.DrawRectangle(50, 40, 150, 60);
+                LCD.SetFontColor(WHITE);
+                LCD.WriteAt(newValue, 50, 40);
+                lastTouch = TimeNow();
+            } else if (numberPad[11].Pressed(x,y,0)) {
+                newValue[strlen(newValue)-1] = 0;
+                LCD.Clear(BLACK);
+                FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+                LCD.WriteAt(intNames[i], 50, 10);
+                LCD.WriteAt(newValue, 50, 40);
+                lastTouch = TimeNow();
+            } else if (numberPad[12].Pressed(x,y,0)) {
+                hasClickedSkip = true;
+                stringstream enter(newValue);
+                enter >> *intValues[i];
+                lastTouch = TimeNow();
+            } else if (numberPad[14].Pressed(x,y,0)) {
+                hasClickedSkip = true;
+                lastTouch = TimeNow();
+            }
+        }
+        }
+    }
+    for (int i = 11; i < floatArraySize; i++) {
+        //FLOAT CALIBRATION
+            sprintf(newValue, "%f", *floatValues[i]);
+            int decimalIndex = strlen(newValue);
+            for (int j = 0; j < strlen(newValue); j++) {
+                if (newValue[j] == '.') {
+                    decimalIndex = j;
+                    j = strlen(newValue);
+                }
+            }
+            for (int k = decimalIndex+3; k < strlen(newValue); k++) {
+                newValue[k] = 0;
+            }
+            LCD.Clear(BLACK);
+            FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+            LCD.WriteAt(floatNames[i], 50, 10);
+            LCD.WriteAt(newValue, 50, 40);
+            bool containsDecimal;
+            hasClickedSkip = false;
+            float lastTouch = TimeNow();
+            while (!hasClickedSkip) {
+                LCD.Touch(&x,&y);
+                //if user selected a number
+            if (TimeNow() - lastTouch > .3) {
+                for (int i = 0; i < 9; i++) {
+                    if (numberPad[i].Pressed(x,y,0)) {
+                        strcat(newValue, pad_nums[i]);
+                        //LCD.SetFontColor(BLACK);
+                        //LCD.DrawRectangle(50, 40, 150, 60);
+                        LCD.SetFontColor(WHITE);
+                        LCD.WriteAt(newValue, 50, 40);
+                        lastTouch = TimeNow();
+                    }
+                }
+                if (numberPad[10].Pressed(x,y,0)) {
+                    strcat(newValue, pad_nums[10]);
+                    //LCD.SetFontColor(BLACK);
+                    //LCD.DrawRectangle(50, 40, 150, 60);
+                    LCD.SetFontColor(WHITE);
+                    LCD.WriteAt(newValue, 50, 40);
+                    lastTouch = TimeNow();
+                } else if (numberPad[11].Pressed(x,y,0)) {
+                    newValue[strlen(newValue)-1] = 0;
+                    LCD.Clear(BLACK);
+                    FEHIcon::DrawIconArray(numberPad, 5, 3, 80, 10, 50, 50, pad_nums, WHITE, WHITE);
+                    LCD.WriteAt(floatNames[i], 50, 10);
+                    LCD.WriteAt(newValue, 50, 40);
+                    lastTouch = TimeNow();
+                } else if (numberPad[12].Pressed(x,y,0)) {
+                    hasClickedSkip = true;
+                    stringstream enter(newValue);
+                    enter >> *floatValues[i];
+                    lastTouch = TimeNow();
+                } else if (numberPad[14].Pressed(x,y,0)) {
+                    hasClickedSkip = true;
+                    lastTouch = TimeNow();
+                } else if (numberPad[9].Pressed(x,y,0)) {
+                    containsDecimal = false;
+                    for (int j = 0; j < strlen(newValue); j++) {
+                        if (newValue[j] == '.') {
+                            containsDecimal = true;
+                            j = strlen(newValue);
+                        }
+                    }
+                    if (!containsDecimal) {
+                        strcat(newValue, pad_nums[9]);
+                        LCD.SetFontColor(WHITE);
+                        LCD.WriteAt(newValue, 50, 40);
+                        lastTouch = TimeNow();
+                    }
+                }
+            }
+            }
+    }
+    LCD.WriteLine("Calibration Successful");
+}
+
+void check_heading(float heading, float speed)
+{
+
+    while (RPS.Heading() >= 0 && RPS.Heading() <= 359.9 && (RPS.Heading() < heading - 1 || RPS.Heading() > heading + 1)) {
+        if (RPS.Heading() > heading + 10) {
+            turn_right(3, 1.5*speed);
+        } else if (RPS.Heading() < heading - 10) {
+            turn_left(3, 1.5*speed);
+        } else if (RPS.Heading() > heading + 1) {
+            turn_right(.75, speed);
+            Sleep(0.15);
+        } else if (RPS.Heading() < heading - 1) {
+            turn_left(.75, speed);
+            Sleep(0.15);
+        } else {
+            right_motor.Stop();
+            left_motor.Stop();
+            Sleep(.15);
+        }
+    }
+/*
+    float currentHeadingLeft, currentHeadingRight, trueHeading = 100;
+    while (RPS.Heading() >= 0 && RPS.Heading() <= 359.9 && trueHeading > 1) {
+        //calculates distance clockwise and counterclockwise
+        currentHeadingRight = heading - RPS.Heading();
+        currentHeadingLeft = 360 + heading - RPS.Heading();
+        //makes both positive
+        if (currentHeadingLeft < 0) {
+            currentHeadingLeft *= -1;
+        }
+        if (currentHeadingRight < 0) {
+            currentHeadingLeft *= -1;
+        }
+        //finds shortest distance
+        if (currentHeadingLeft < currentHeadingRight) {
+            trueHeading = currentHeadingLeft;
+        } else {
+            trueHeading = currentHeadingRight;
+            speed *= -1;
+        }
+
+        if (trueHeading > 10) {
+            turn_left(trueHeading, 1.5*speed);
+        } else if (trueHeading > 1) {
+            turn_left(.75, speed);
+            Sleep(0.15);
+        } else {
+            right_motor.Stop();
+            left_motor.Stop();
+            Sleep(.15);
+        }
+
+    }*/
+
+}
+
+void check_heading_zero(float speed) {
+    while (RPS.Heading() >= 0 && RPS.Heading() <= 359.9 && (RPS.Heading() < 359 && RPS.Heading() > 1)) {
+        if (360 - RPS.Heading() < 180) {
+            turn_left(360-RPS.Heading());
+            Sleep(.25);
+            if (RPS.Heading() < 359 && RPS.Heading() >= 180) {
+                turn_right(.75, speed);
+                Sleep(0.15);
+            } else if (RPS.Heading() > 1 && RPS.Heading() < 180) {
+                turn_left(.75, speed);
+                Sleep(0.15);
+            }
+        }
+        if (360 - RPS.Heading() >= 180) {
+            turn_right(RPS.Heading());
+            Sleep(.25);
+            if (RPS.Heading() < 359 && RPS.Heading() >= 180) {
+                turn_right(.75, speed);
+                Sleep(0.15);
+            } else if (RPS.Heading() > 1 && RPS.Heading() < 180) {
+                turn_left(.75, speed);
+                Sleep(0.15);
+            }
+        }
+    }
+}
+
+int main(void)
+{
+    float x,y;
+    LCD.Clear(FEHLCD::Black);
+    LCD.SetFontColor(FEHLCD::White);
+
+    /*
+     * Set up everything needed for run
+     * Calibrates values for everything
+     * Initializes RPS to specific region
+     * Sets servo for hand and arm to starting position
+     */
+    //ACTUAL VARIABLES
+    int firstTestValue = 1, secondTestValue = 25, thirdValue = 146, fourth = 0, fifth = 277, sixth = 12, null = 0;
+    float initialBumpS = 15, initialBumpD = 4, firstHeading = 45, turnSpeed = 15, firstMoveS = 25, firstMoveD = 12, secondHeading = 180, rampSpeed = -50, rampDist = 30, afterRampDegree = 90, wallSpeed = 30, distanceLineBurger = 5, speedToBurger = 20, distanceToBurger = 58.5, liftTime = 3, burgerRightLift = 12, burgerLeftLift = 32, endDegree = 40, backSpeed = 30, backDistance = 10,
+            toLine = 48, toLineSpeed = 15, followTime = 5, SPEED = 40, distanceToLever = 18;
+    //CALIBRATION ARRAYS
+    int *calibValsI[] = {&null};
+    float *calibValsF[] = {&initialBumpS, &initialBumpD, &firstHeading , &turnSpeed , &firstMoveS , &firstMoveD , &secondHeading , &rampSpeed , &rampDist , &afterRampDegree, &wallSpeed, &distanceLineBurger, &speedToBurger, &distanceToBurger, &liftTime, &burgerRightLift, &burgerLeftLift, &endDegree, &backSpeed, &backDistance,
+                          &toLine, &toLineSpeed, &followTime, &SPEED, &distanceToLever};
+    char varNamesI[][50] = {"null"};
+    char varNamesF[][50] = {"jut forward to turn speed", "jut forward to turn", "Heading at beginning", "Turn Speed", "first move speed", "first distance", "180 to ramp", "speed up ramp", "ramp distance", "turn to face wall degree", "speed to wall", "backing up distance", "speed to burger", "distance to burger", "time spent lifting", "burger right drive", "burger left drive", "final burger degree"
+                           ,"back from burger spe", "back from burger dist", "degrees to line", "turning to lever speed", "follow time", "speed to lever", "distance to lever"};
+    calibrateValues(calibValsI, calibValsF, varNamesI, varNamesF);
+    LCD.Clear(BLACK);
+
+    RPS.InitializeTouchMenu();
+
+    hand.SetMin(500);
+    hand.SetMax(2318);
+    starting_position();
+
+    //waits for light to start
+    LCD.WriteLine("Waiting for light.");
+    while(!(sensor.Value() > 0.3 && sensor.Value() < 0.4));
+    move_forward(initialBumpS, initialBumpD);
+    check_heading(firstHeading, turnSpeed);
+    move_forward(firstMoveS, firstMoveD);
+
+    //check_heading(secondHeading, turnSecondS);
+    check_heading(secondHeading, turnSpeed);
+    Sleep(.5);
+    move_forward(.5*rampSpeed, 1);
+    move_forward(.75*rampSpeed, 1);
+    move_forward(rampSpeed, rampDist);
+    Sleep(.5);
+    turn_left(afterRampDegree);
+    Sleep(.25);
+    right_motor.SetPercent(wallSpeed);
+    left_motor.SetPercent(wallSpeed);
+    while (right_front.Value() != 0 || left_front.Value() != 0);
+    right_motor.Stop();
+    left_motor.Stop();
+    Sleep(.2);
+    move_forward(-wallSpeed, distanceLineBurger);
+    Sleep(.25);
+    check_heading_zero(turnSpeed);
+    arm_horizontal();
+    Sleep(1.0);
+    right_motor.SetPercent(speedToBurger);
+    left_motor.SetPercent(speedToBurger);
+    while (RPS.Y() < distanceToBurger);
+    right_motor.Stop();
+    left_motor.Stop();
+    Sleep(.25);
+    //lifting burger
+    float burgerTime = TimeNow();
+    arm.SetPercent(100);
+    right_motor.SetPercent(burgerRightLift);
+    left_motor.SetPercent(burgerLeftLift);
+    while (TimeNow() - burgerTime < liftTime) {
+            //hand.SetDegree(40+(TimeNow()-burgerTime)/100/liftTime*endDegree);
+    }
+    LCD.WriteLine("Burger has flipped");
+    arm.Stop();
+    right_motor.Stop();
+    left_motor.Stop();
+    Sleep(.25);
+    check_heading_zero(turnSpeed);
+    move_forward(-backSpeed, backDistance);
+    hand.SetDegree(112);
+    check_heading(toLine, toLineSpeed);
+    /*
+    drive_to_line(toLineSpeed);
+    LCD.WriteLine("FOUND THE LINE");
+    follow_line(followTime);
+    LCD.WriteLine("DONE FOLLOWING THE LINE");*/
+    LCD.WriteLine("smashing into ice cream");
+    move_forward(SPEED, distanceToLever);
+
+
+
+
+
+    return 0;
+}
